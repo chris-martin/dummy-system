@@ -70,7 +70,7 @@ class DummyServer(typesafeConfig: TypesafeConfig = TypesafeConfigFactory.load())
 
         utilizeCpu(cpuIntensity)
 
-        for (co <- node.collaborators) {
+        for (co <- node.collaborators.par) {
           val request = Request(
             dummyData = Some(arbitraryString(co.requestSize getOrElse 100)),
             node = co.node
