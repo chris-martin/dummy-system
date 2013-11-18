@@ -1,6 +1,5 @@
 package dummy
 
-import com.typesafe.config.{Config => TypesafeConfig, ConfigFactory => TypesafeConfigFactory}
 import org.eclipse.jetty.server.{Request => JettyRequest, Handler => JettyHandler, Server => Jetty}
 import org.eclipse.jetty.server.handler.{AbstractHandler => AbstractJettyHandler}
 import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
@@ -12,10 +11,12 @@ import net.liftweb.json.Serialization
 import scala.util.control.NonFatal
 import scala.concurrent.duration._
 
-object DummyServer {
+object DummyServer extends Runnable {
 
-  def main(args: Array[String]) {
-    val server = new DummyServer
+  def run() {
+    val config = dummy.config.getConfig("dummy.server")
+    val port: Int = config getInt "port"
+    val server = new DummyServer(port)
     addShutdownHook(server.jetty.stop())
     server.jetty.start()
     readLine()
@@ -29,11 +30,31 @@ object DummyServer {
   def newThread(f: => Unit): Thread =
     new Thread(new Runnable { def run(): Unit = f })
 
+  case class Request(dummyData: Option[String] = None, node: Node)
+
+  case class Response(dummyData: Option[String] = None, errors: Seq[String] = Nil)
+
+  case class Node(
+    collaborators: Seq[Collaborator] = Nil,
+    cpuIntensity: Option[Int] = None, // how much cpu consumption should occur
+    responseSize: Option[Int] = None // how much data does this server return
+  )
+
+  case class Collaborator(
+    url: String,
+    node: Node,
+    requestSize: Option[Int] = None // how much data should be sent to this service
+  )
+
+  def log(s: String): Unit = println(s)
+
 }
 
-class DummyServer(typesafeConfig: TypesafeConfig = TypesafeConfigFactory.load()) {
+import DummyServer._
+
+class DummyServer(port: Int) {
   
-  val jetty = new Jetty(typesafeConfig getInt "dummy.port")
+  val jetty = new Jetty(port)
   jetty setHandler requestHandler
 
   val random = new Random
@@ -49,8 +70,11 @@ class DummyServer(typesafeConfig: TypesafeConfig = TypesafeConfigFactory.load())
         httpResponse setContentType "application/json;charset=utf-8"
         httpResponse setStatus statusCode
         val responseString = Serialization.write(r)
-        println(s"Response: $responseString")
-        httpResponse.getWriter println responseString
+        log(s"Response: $responseString")
+        val w = httpResponse.getWriter
+        w println responseString
+        w.flush()
+        w.close()
         baseRequest setHandled true
       }
 
@@ -64,21 +88,21 @@ class DummyServer(typesafeConfig: TypesafeConfig = TypesafeConfigFactory.load())
 
       try {
 
-        println(s"Request: $requestString")
+        log(s"Request: $requestString")
 
         val cpuIntensity: Int = node.cpuIntensity getOrElse 100
 
         utilizeCpu(cpuIntensity)
 
-        for (co <- node.collaborators.par) {
+        for (co <- node.collaborators) {
           val request = Request(
             dummyData = Some(arbitraryString(co.requestSize getOrElse 100)),
             node = co.node
           )
           Http.postData(co.url, Serialization.write(request))
             .options(
-              HttpOptions.connTimeout(60.seconds.toMillis.toInt),
-              HttpOptions.readTimeout(60.seconds.toMillis.toInt))
+              HttpOptions.connTimeout(5.seconds.toMillis.toInt),
+              HttpOptions.readTimeout(5.seconds.toMillis.toInt))
             .asString
         }
 
@@ -106,19 +130,3 @@ class DummyServer(typesafeConfig: TypesafeConfig = TypesafeConfigFactory.load())
     Stream.fill(scale * 100)(random.nextLong()).mkString(",")
 
 }
-
-case class Request(dummyData: Option[String] = None, node: Node)
-
-case class Response(dummyData: Option[String] = None, errors: Seq[String] = Nil)
-
-case class Node(
-  collaborators: Seq[Collaborator] = Nil,
-  cpuIntensity: Option[Int] = None, // how much cpu consumption should occur
-  responseSize: Option[Int] = None // how much data does this server return
-)
-
-case class Collaborator(
-  url: String,
-  node: Node,
-  requestSize: Option[Int] = None // how much data should be sent to this service
-)
