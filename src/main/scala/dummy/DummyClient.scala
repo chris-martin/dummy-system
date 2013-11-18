@@ -6,6 +6,7 @@ import scalaj.http.{HttpOptions, Http}
 import scala.concurrent.duration._
 import scala.collection.convert.wrapAll._
 import scala.collection.mutable
+import scala.util.Random
 
 object DummyClient extends Runnable {
 
@@ -54,6 +55,8 @@ class DummyClient(config: TypesafeConfig = dummy.config) extends Actor {
   val ensembles: Seq[Ensemble] =
     config.getConfigList("dummy.client.ensemble").map(new Ensemble(_))
 
+  val r = new Random
+
   self ! 'init
 
   val http = mutable.Map[ActorRef, Ensemble]()
@@ -79,10 +82,15 @@ class DummyClient(config: TypesafeConfig = dummy.config) extends Actor {
   }
 
   def setTimer(e: Ensemble) {
+
     val system = context.system
     import system._
-    scheduler.scheduleOnce(e.delay) { self ! e }
-    e.delay
+
+    val delay: FiniteDuration = math.max(0, randomize(e.delay.toNanos)).nanos
+
+    scheduler.scheduleOnce(delay) { self ! e }
   }
+
+  def randomize(x: Double): Double = x * (1 + r.nextGaussian())
 
 }
