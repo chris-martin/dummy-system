@@ -1,5 +1,6 @@
 import sbt._
 import Keys._
+import sbtassembly.Plugin._
 
 object Build extends Build {
 
@@ -21,5 +22,6 @@ object Build extends Build {
         "org.specs2" % "specs2_2.10" % "2.2.1" % "test"
       )
     )
+    settings(assemblySettings: _*)
   )
 }
